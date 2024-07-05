@@ -25,7 +25,6 @@ impl TunnelConn {
 
 impl TunnelConn {
     pub async fn start_serv_http(mut self, mut dns_resolver: SimpleCachingDnsResolver) -> anyhow::Result<()> {
-        info!("start_serv_http");
         let stream = self.stream;
         let (r, mut w) = stream.into_split();
         let mut r = FramedRead::new(r, HandshakeCodec::new());
@@ -63,10 +62,7 @@ impl TunnelConn {
         if sni.is_empty() {
             return Err(anyhow::anyhow!("no sni"));
         }
-        info!("bytes: {:?}", sni.bytes());
-        info!("sni: {}", sni);
         let addr = format!("{}:443", sni);
-
         info!("start resolve https: {}", addr);
         let remote_addr = dns_resolver.resolve(&addr).await?;
         info!("resolved https: {}->{}", addr, remote_addr);

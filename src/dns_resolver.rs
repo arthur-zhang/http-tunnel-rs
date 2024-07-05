@@ -62,12 +62,12 @@ impl SimpleCachingDnsResolver{
         Ok(self.pick(&resolved))
     }
     async fn resolve_inner(target: &str) -> io::Result<Vec<SocketAddr>> {
-        info!("Resolving DNS {}", target);
+        debug!("Resolving DNS {}", target);
         let resolved: Vec<SocketAddr> = tokio::net::lookup_host(target).await?.collect();
-        info!("Resolved DNS {} to {:?}", target, resolved);
+        debug!("Resolved DNS {} to {:?}", target, resolved);
 
         if resolved.is_empty() {
-            info!("Cannot resolve DNS {}", target);
+            error!("Cannot resolve DNS {}", target);
             return Err(Error::from(ErrorKind::AddrNotAvailable));
         }
 

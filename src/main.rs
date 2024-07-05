@@ -69,6 +69,7 @@ async fn main() -> anyhow::Result<()> {
 
 async fn serve_tcp(config: Arc<Config>, dns_resolver: SimpleCachingDnsResolver, tcp_conf: TcpConfig) -> anyhow::Result<()> {
     let bind_address = format!("0.0.0.0:{}", tcp_conf.listen_port);
+    info!("serving tcp requests on: {bind_address}");
     let listener = TcpListener::bind(&bind_address).await.expect(&format!("tcp tunnel bind error {}", bind_address));
 
     loop {
@@ -78,9 +79,10 @@ async fn serve_tcp(config: Arc<Config>, dns_resolver: SimpleCachingDnsResolver, 
                 let _ = stream.nodelay();
                 tokio::spawn({
                     let dns_resolver = dns_resolver.clone();
+                    let tcp_conf = tcp_conf.clone();
                     async move {
                         let mut tunnel = tunnel::TunnelConn::new(stream);
-                        let _ = tunnel.start_serv_http(dns_resolver).await;
+                        let _ = tunnel.start_serv_tcp(tcp_conf, dns_resolver).await;
                     }
                 });
             }
