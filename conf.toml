@@ -6,14 +6,14 @@ listen_port = 8443
 
 # 下面配置多个 tcp 透明代理
 # 配置 1：将本地 8082 端口的数据转发到云端的 22 端口
-[[tcp]]
-listen_port = 8082
-remote_addr = "192.168.31.197:22"
-
-# 配置 1：将本地 8082 端口的数据转发到云端的 22 端口
-[[tcp]]
-listen_port = 8083
-remote_addr = "192.168.31.197:80"
+#[[tcp]]
+#listen_port = 8082
+#remote_addr = "192.168.31.197:22"
+#
+## 配置 1：将本地 8082 端口的数据转发到云端的 22 端口
+#[[tcp]]
+#listen_port = 8083
+#remote_addr = "192.168.31.197:80"
 
 [client_connection]
 initiation_timeout = "10s"

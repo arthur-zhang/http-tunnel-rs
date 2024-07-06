@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use log::{debug, error, info};
-use rand::{Rng, thread_rng};
+use rand::{random, Rng, thread_rng};
 use tokio::io;
 use tokio::sync::RwLock;
 type CachedSocketAddrs = (Vec<SocketAddr>, u128);
@@ -45,7 +45,7 @@ impl SimpleCachingDnsResolver{
         addr
     }
     fn pick(&self, addrs: &[SocketAddr]) -> SocketAddr {
-        addrs[thread_rng().gen::<usize>() % addrs.len()]
+        addrs[random::<usize>() % addrs.len()]
     }
     async fn resolve_and_cache(&mut self, target: &str) -> io::Result<SocketAddr> {
         let resolved = SimpleCachingDnsResolver::resolve_inner(target).await?;
