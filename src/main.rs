@@ -1,33 +1,35 @@
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
-use log::info;
 
+use log::{error, info};
 use tokio::net::TcpListener;
 
 use crate::conf::{Config, TcpConfig};
-use crate::dns_resolver::SimpleCachingDnsResolver;
+use crate::tcp_connector::TcpConnector;
 
 mod handshake_codec;
 mod conf;
 mod tunnel;
 mod tls_codec;
-mod dns_resolver;
+mod dns;
+mod tcp_connector;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let conf = Config::from_cmd_line()?;
-    let conf = Arc::new(conf);
-    let dns_resolver = SimpleCachingDnsResolver::new(conf.tunnel_config.target_connection.dns_cache_ttl);
+
+    let resolver = Arc::new(dns::DnsResolver::new());
+    let tcp_connector = Arc::new(TcpConnector::new(conf.tunnel_config.client_connection.clone(), resolver.clone()));
 
     let mut join_handle_list = vec![];
 
     if let Some(ref http_conf) = conf.http {
         let jh = tokio::spawn({
-            let conf = conf.clone();
-            let dns_resolver = dns_resolver.clone();
             let port = http_conf.listen_port;
+            let tcp_connector = tcp_connector.clone();
             async move {
-                serve_plain_text(conf, port, dns_resolver).await?;
+                serve_http(port, tcp_connector).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -35,11 +37,10 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(ref https_conf) = conf.https {
         let jh = tokio::spawn({
-            let conf = conf.clone();
-            let dns_resolver = dns_resolver.clone();
+            let tcp_connector = tcp_connector.clone();
             let port = https_conf.listen_port;
             async move {
-                serve_https(conf, port, dns_resolver).await?;
+                serve_https(port, tcp_connector).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -47,12 +48,10 @@ async fn main() -> anyhow::Result<()> {
     }
     for tcp_conf in &conf.tcp {
         let jh = tokio::spawn({
-            let conf = conf.clone();
             let tcp_conf = tcp_conf.clone();
-            let dns_resolver = dns_resolver.clone();
-
+            let tcp_connector = tcp_connector.clone();
             async move {
-                serve_tcp(conf, dns_resolver, tcp_conf).await?;
+                serve_tcp(tcp_conf, tcp_connector.clone()).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -60,29 +59,32 @@ async fn main() -> anyhow::Result<()> {
     }
 
     for jh in join_handle_list {
-        let _ = jh.await?;
+        let join_result = jh.await;
+        if let Err(e) = join_result {
+            error!("join error: {}", e);
+        }
     }
 
-    info!("Proxy stopped");
+    error!("proxy stopped");
     Ok(())
 }
 
-async fn serve_tcp(config: Arc<Config>, dns_resolver: SimpleCachingDnsResolver, tcp_conf: TcpConfig) -> anyhow::Result<()> {
+async fn serve_tcp(tcp_conf: TcpConfig, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
     let bind_address = format!("0.0.0.0:{}", tcp_conf.listen_port);
     info!("serving tcp requests on: {bind_address}");
-    let listener = TcpListener::bind(&bind_address).await.expect(&format!("tcp tunnel bind error {}", bind_address));
+    let listener = TcpListener::bind(&bind_address).await?;
 
     loop {
         let socket = listener.accept().await;
         match socket {
             Ok((stream, _)) => {
-                let _ = stream.nodelay();
+                let _ = stream.set_nodelay(true);
                 tokio::spawn({
-                    let dns_resolver = dns_resolver.clone();
                     let tcp_conf = tcp_conf.clone();
+                    let tcp_connector = tcp_connector.clone();
                     async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream);
-                        let _ = tunnel.start_serv_tcp(tcp_conf, dns_resolver).await;
+                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
+                        let _ = tunnel.start_serv_tcp(tcp_conf).await;
                     }
                 });
             }
@@ -93,21 +95,22 @@ async fn serve_tcp(config: Arc<Config>, dns_resolver: SimpleCachingDnsResolver, 
     Ok(())
 }
 
-async fn serve_plain_text(config: Arc<Config>, port: u16, dns_resolver: SimpleCachingDnsResolver) -> anyhow::Result<()> {
-    let bind_address = format!("0.0.0.0:{}", port);
-    info!("serving http requests on: {bind_address}");
-    let listener = TcpListener::bind(&bind_address).await.expect(&format!("http tunnel bind error {}", bind_address));
+async fn serve_http(listen_port: u16, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
+    let listen_sock_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, listen_port);
+    info!("serving http requests on: {listen_sock_addr}");
+
+    let listener = TcpListener::bind(&listen_sock_addr).await?;
 
     loop {
         let socket = listener.accept().await;
         match socket {
             Ok((stream, _)) => {
-                let _ = stream.nodelay();
+                let _ = stream.set_nodelay(true);
                 tokio::spawn({
-                    let dns_resolver = dns_resolver.clone();
+                    let tcp_connector = tcp_connector.clone();
                     async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream);
-                        let _ = tunnel.start_serv_http(dns_resolver).await;
+                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
+                        let _ = tunnel.start_serv_http().await;
                     }
                 });
             }
@@ -116,25 +119,25 @@ async fn serve_plain_text(config: Arc<Config>, port: u16, dns_resolver: SimpleCa
     }
 }
 
-async fn serve_https(config: Arc<Config>, port: u16, dns_resolver: SimpleCachingDnsResolver) -> anyhow::Result<()> {
+async fn serve_https(port: u16, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
     let bind_address = format!("0.0.0.0:{}", port);
     info!("serving https requests on: {bind_address}");
-    let listener = TcpListener::bind(&bind_address).await.expect(&format!("http tunnel bind error {}", bind_address));
+    let listener = TcpListener::bind(&bind_address).await?;
 
     loop {
         let socket = listener.accept().await;
         match socket {
             Ok((stream, _)) => {
-                let _ = stream.nodelay();
+                let _ = stream.set_nodelay(true);
                 tokio::spawn({
-                    let dns_resolver = dns_resolver.clone();
+                    let tcp_connector = tcp_connector.clone();
                     async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream);
-                        let _ = tunnel.start_serv_https(dns_resolver).await;
+                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
+                        let _ = tunnel.start_serv_https().await;
                     }
                 });
             }
-            Err(e) => info!("Failed TCP handshake {}", e),
+            Err(e) => info!("https accept failed: {}", e),
         }
     }
 }
