@@ -2,17 +2,19 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
 
 use log::{error, info};
+use rand::distributions::WeightedError::AllWeightsZero;
 use tokio::net::TcpListener;
 
-use crate::conf::{Config, TcpConfig};
-use crate::tcp_connector::TcpConnector;
+use crate::conf::{Config, HttpConfig, HttpsConfig, TcpConfig};
+use crate::connection_handle::{HttpsTunnel, HttpTunnel, serve, TcpTunnel};
+use crate::tcp_connector::{ATcpConnector, TcpConnector};
 
 mod handshake_codec;
 mod conf;
-mod tunnel;
 mod tls_codec;
 mod dns;
 mod tcp_connector;
+mod connection_handle;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,10 +28,10 @@ async fn main() -> anyhow::Result<()> {
 
     if let Some(ref http_conf) = conf.http {
         let jh = tokio::spawn({
-            let port = http_conf.listen_port;
+            let http_conf = http_conf.clone();
             let tcp_connector = tcp_connector.clone();
             async move {
-                serve_http(port, tcp_connector).await?;
+                serve_http_tunnel(http_conf, tcp_connector).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -37,10 +39,10 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(ref https_conf) = conf.https {
         let jh = tokio::spawn({
+            let https_conf = https_conf.clone();
             let tcp_connector = tcp_connector.clone();
-            let port = https_conf.listen_port;
             async move {
-                serve_https(port, tcp_connector).await?;
+                serve_https_tunnel(https_conf, tcp_connector).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -51,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
             let tcp_conf = tcp_conf.clone();
             let tcp_connector = tcp_connector.clone();
             async move {
-                serve_tcp(tcp_conf, tcp_connector.clone()).await?;
+                serve_tcp_tunnel(tcp_conf, tcp_connector).await?;
                 Ok::<(), anyhow::Error>(())
             }
         });
@@ -69,75 +71,17 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn serve_tcp(tcp_conf: TcpConfig, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
-    let bind_address = format!("0.0.0.0:{}", tcp_conf.listen_port);
-    info!("serving tcp requests on: {bind_address}");
-    let listener = TcpListener::bind(&bind_address).await?;
-
-    loop {
-        let socket = listener.accept().await;
-        match socket {
-            Ok((stream, _)) => {
-                let _ = stream.set_nodelay(true);
-                tokio::spawn({
-                    let tcp_conf = tcp_conf.clone();
-                    let tcp_connector = tcp_connector.clone();
-                    async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
-                        let _ = tunnel.start_serv_tcp(tcp_conf).await;
-                    }
-                });
-            }
-            Err(e) => info!("Failed TCP handshake {}", e),
-        }
-    }
-
-    Ok(())
+pub async fn serve_http_tunnel(http_config: HttpConfig, tcp_connector: ATcpConnector) -> anyhow::Result<()> {
+    let http_tunnel = HttpTunnel::new(http_config, tcp_connector);
+    serve(Arc::new(http_tunnel)).await
 }
 
-async fn serve_http(listen_port: u16, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
-    let listen_sock_addr = SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, listen_port);
-    info!("serving http requests on: {listen_sock_addr}");
-
-    let listener = TcpListener::bind(&listen_sock_addr).await?;
-
-    loop {
-        let socket = listener.accept().await;
-        match socket {
-            Ok((stream, _)) => {
-                let _ = stream.set_nodelay(true);
-                tokio::spawn({
-                    let tcp_connector = tcp_connector.clone();
-                    async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
-                        let _ = tunnel.start_serv_http().await;
-                    }
-                });
-            }
-            Err(e) => info!("Failed TCP handshake {}", e),
-        }
-    }
+pub async fn serve_https_tunnel(https_config: HttpsConfig, tcp_connector: ATcpConnector) -> anyhow::Result<()> {
+    let https_tunnel = HttpsTunnel::new(https_config, tcp_connector);
+    serve(Arc::new(https_tunnel)).await
 }
 
-async fn serve_https(port: u16, tcp_connector: Arc<TcpConnector>) -> anyhow::Result<()> {
-    let bind_address = format!("0.0.0.0:{}", port);
-    info!("serving https requests on: {bind_address}");
-    let listener = TcpListener::bind(&bind_address).await?;
-
-    loop {
-        let socket = listener.accept().await;
-        match socket {
-            Ok((stream, _)) => {
-                let _ = stream.set_nodelay(true);
-                tokio::spawn({
-                    let tcp_connector = tcp_connector.clone();
-                    async move {
-                        let mut tunnel = tunnel::TunnelConn::new(stream, tcp_connector);
-                        let _ = tunnel.start_serv_https().await;
-                    }
-                });
-            }
-            Err(e) => info!("https accept failed: {}", e),
-        }
-    }
+pub async fn serve_tcp_tunnel(tcp_config: TcpConfig, tcp_connector: ATcpConnector) -> anyhow::Result<()> {
+    let tcp_tunnel = TcpTunnel::new(tcp_config, tcp_connector);
+    serve(Arc::new(tcp_tunnel)).await
 }

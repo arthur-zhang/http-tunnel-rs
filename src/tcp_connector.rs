@@ -1,10 +1,13 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
+use std::sync::Arc;
 
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 
 use crate::conf::ClientConnectionConfig;
 use crate::dns::TDNSResolver;
+
+pub type ATcpConnector  = Arc<TcpConnector>;
 
 pub struct TcpConnector {
     client_connection_config: ClientConnectionConfig,

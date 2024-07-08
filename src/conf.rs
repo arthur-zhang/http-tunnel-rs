@@ -71,11 +71,11 @@ impl Config {
 }
 
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct HttpConfig {
     pub listen_port: u16,
 }
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct HttpsConfig {
     pub listen_port: u16,
 }

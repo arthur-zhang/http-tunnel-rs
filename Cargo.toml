@@ -20,4 +20,5 @@ log = "0.4.22"
 humantime-serde = "1.0"
 env_logger = "0.11.3"
 hickory-resolver = "0.24.1"
+async-trait = "0.1.80"
 
