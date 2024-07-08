@@ -15,12 +15,7 @@ listen_port = 8443
 #listen_port = 8083
 #remote_addr = "192.168.31.197:80"
 
-[client_connection]
-initiation_timeout = "10s"
-idle_timeout = "30s"
-
 [target_connection]
-dns_cache_ttl = "60s"
-connect_timeout = "10s"
-idle_timeout = "30s"
+dns_cache_ttl = "600s"
+connect_timeout = "2s"
 

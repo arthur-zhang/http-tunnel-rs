@@ -4,13 +4,6 @@ use anyhow::bail;
 use clap::Parser;
 use serde::Deserialize;
 
-pub const NO_TIMEOUT: Duration = Duration::from_secs(300);
-
-#[derive( Deserialize, Clone, Debug)]
-pub struct RelayPolicy {
-    #[serde(with = "humantime_serde")]
-    pub idle_timeout: Duration,
-}
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
@@ -31,29 +24,8 @@ pub struct Config {
 
 }
 
-impl Default for TunnelConfig {
-    fn default() -> Self {
-        Self {
-            client_connection: ClientConnectionConfig {
-                // initiation_timeout: NO_TIMEOUT,
-                // relay_policy: RelayPolicy {
-                //     idle_timeout: NO_TIMEOUT,
-                // },
-            },
-            target_connection: TargetConnectionConfig {
-                dns_cache_ttl: NO_TIMEOUT,
-                // connect_timeout: NO_TIMEOUT,
-                // relay_policy: RelayPolicy {
-                //     idle_timeout: NO_TIMEOUT,
-                // },
-            },
-        }
-    }
-}
-
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug, Default)]
 pub struct TunnelConfig {
-    pub client_connection: ClientConnectionConfig,
     pub target_connection: TargetConnectionConfig,
 }
 
@@ -85,53 +57,21 @@ pub struct TcpConfig {
     pub remote_addr: String,
 }
 
-#[derive(Deserialize, Debug, Clone)]
-pub struct ClientConnectionConfig {
-    // #[serde(with = "humantime_serde")]
-    // pub initiation_timeout: Duration,
-    // #[serde(with = "humantime_serde")]
-    // pub idle_timeout: Duration,
-    // #[serde(flatten)]
-    // pub relay_policy: RelayPolicy,
-}
-
-impl Default for ClientConnectionConfig {
-    fn default() -> Self {
-        Self {
-            // initiation_timeout: Duration::from_secs(10),
-            // relay_policy: RelayPolicy {
-            //     idle_timeout: Duration::from_secs(30),
-            // },
-        }
-    }
-}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct TargetConnectionConfig {
     #[serde(with = "humantime_serde")]
-    pub dns_cache_ttl: Duration,
-    // #[serde(with = "humantime_serde")]
-    // pub connect_timeout: Duration,
-    // #[serde(flatten)]
-    // pub relay_policy: RelayPolicy,
-
+    pub dns_cache_ttl: Option<Duration>,
+    #[serde(with = "humantime_serde")]
+    pub connect_timeout: Duration,
 }
-
-// #[derive(Builder, Deserialize, Clone, Debug)]
-// pub struct RelayPolicy {
-//     #[serde(with = "humantime_serde")]
-//     pub idle_timeout: Duration,
-// }
 
 
 impl Default for TargetConnectionConfig {
     fn default() -> Self {
         Self {
-            dns_cache_ttl: Duration::from_secs(60),
-            // connect_timeout: Duration::from_secs(10),
-            // relay_policy: RelayPolicy {
-            //     idle_timeout: Duration::from_secs(30),
-            // },
+            dns_cache_ttl: None,
+            connect_timeout: Duration::from_secs(10),
         }
     }
 }
@@ -139,6 +79,7 @@ impl Default for TargetConnectionConfig {
 #[cfg(test)]
 mod tests {
     use log::info;
+
     use crate::conf::Config;
 
     #[test]

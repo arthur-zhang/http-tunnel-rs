@@ -2,7 +2,7 @@ use std::net::{Ipv4Addr, ToSocketAddrs};
 use std::sync::Arc;
 
 use anyhow::bail;
-use log::info;
+use log::{debug, error, info};
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_stream::StreamExt;
@@ -56,16 +56,26 @@ impl TcpTunnel {
 
 
 pub async fn serve<T>(handler: Arc<T>) -> anyhow::Result<()>
-    where T: TunnelHandler + 'static {
+where
+    T: TunnelHandler + 'static,
+{
     let bind_addr = handler.listen_addr();
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
     info!("[{}] listening on: {:?}", handler.name(), bind_addr);
     loop {
         let (stream, _) = listener.accept().await?;
+        let _ = stream.set_nodelay(true);
         tokio::spawn({
             let handler = handler.clone();
+            debug!("[{}] start process new connection", handler.name());
             async move {
-                handler.handle_conn(stream).await
+                let result = handler.handle_conn(stream).await;
+                if let Err(e) = result {
+                    error!("[{}] process connection error: {:?}", handler.name(), e);
+                } else {
+                    debug!("[{}] process connection success", handler.name());
+                }
+                Ok::<(), anyhow::Error>(())
             }
         });
     }
@@ -88,6 +98,7 @@ impl TunnelHandler for HttpTunnel {
         let header_pkt = r.next().await.ok_or(anyhow::anyhow!("no header pkt"))??;
         info!("header pkt: {:?}", header_pkt);
         let mut remote_conn = self.tcp_connector.connect(&header_pkt.host, header_pkt.port).await?;
+
 
         if header_pkt.is_connect {
             w.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await?;

@@ -19,10 +19,10 @@ mod connection_handle;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let conf = Config::from_cmd_line()?;
 
-    let resolver = Arc::new(dns::DnsResolver::new());
-    let tcp_connector = Arc::new(TcpConnector::new(conf.tunnel_config.client_connection.clone(), resolver.clone()));
+    let conf = Config::from_cmd_line()?;
+    info!("config: {:?}", conf);
+    let tcp_connector = Arc::new(TcpConnector::new(conf.tunnel_config.target_connection.clone()));
 
     let mut join_handle_list = vec![];
 

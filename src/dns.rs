@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::time::Duration;
+
 use hickory_resolver::config::{ResolverConfig, ResolverOpts};
 use hickory_resolver::TokioAsyncResolver;
 
@@ -8,8 +10,13 @@ pub struct DnsResolver {
 }
 
 impl DnsResolver {
-    pub fn new() -> Self {
-        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), ResolverOpts::default());
+    pub fn new(dns_ttl: Option<Duration>) -> Self {
+        let mut opt = ResolverOpts::default();
+
+        if dns_ttl.is_some() {
+            opt.positive_max_ttl = dns_ttl;
+        }
+        let resolver = TokioAsyncResolver::tokio(ResolverConfig::default(), opt);
         DnsResolver {
             _inner: resolver,
         }
