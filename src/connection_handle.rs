@@ -13,6 +13,7 @@ use crate::handshake_codec::HandshakeCodec;
 use crate::tcp_connector::ATcpConnector;
 use crate::tls_codec::TlsCodec;
 
+const BUF_SIZE: usize = 512 * 1024;
 #[async_trait::async_trait]
 pub trait TunnelHandler: Send + Sync {
     fn name(&self) -> &'static str;
@@ -71,7 +72,7 @@ where
             async move {
                 let result = handler.handle_conn(stream).await;
                 if let Err(e) = result {
-                    error!("[{}] process connection error: {:?}", handler.name(), e);
+                    info!("[{}] process connection error: {:?}", handler.name(), e);
                 } else {
                     debug!("[{}] process connection success", handler.name());
                 }
@@ -110,7 +111,7 @@ impl TunnelHandler for HttpTunnel {
 
         let r = r.into_inner();
         let mut client_stream = r.reunite(w)?;
-        tokio::io::copy_bidirectional(&mut client_stream, &mut remote_conn).await?;
+        tokio::io::copy_bidirectional_with_sizes(&mut client_stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
         Ok(())
     }
 }
@@ -140,7 +141,7 @@ impl TunnelHandler for HttpsTunnel {
 
         let r = r.into_inner();
         let mut client_stream = r.reunite(w)?;
-        tokio::io::copy_bidirectional(&mut client_stream, &mut remote_conn).await?;
+        tokio::io::copy_bidirectional_with_sizes(&mut client_stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
         Ok(())
     }
 }
@@ -168,7 +169,7 @@ impl TunnelHandler for TcpTunnel {
         };
 
         let mut remote_conn = self.tcp_connector.connect(&host, port).await?;
-        tokio::io::copy_bidirectional(&mut stream, &mut remote_conn).await?;
+        tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
         Ok(())
     }
 }
