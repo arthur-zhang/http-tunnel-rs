@@ -127,8 +127,8 @@ impl TunnelHandler for HttpsTunnel {
     }
 
     async fn handle_conn(&self, stream: TcpStream) -> anyhow::Result<()> {
-        let (r, mut w) = stream.into_split();
-        let mut r = FramedRead::new(r, TlsCodec::new());
+        let (mut client_r, mut client_w) = stream.into_split();
+        let mut r = FramedRead::new(client_r, TlsCodec::new());
 
         let (sni, bytes) = r.next().await.ok_or(anyhow::anyhow!("no header pkt"))??;
         if sni.is_empty() {
@@ -136,12 +136,18 @@ impl TunnelHandler for HttpsTunnel {
         }
         let mut remote_conn = self.tcp_connector.connect(&sni, 443).await?;
 
-        remote_conn.write_all(&bytes).await?;
-        remote_conn.flush().await?;
+        let (mut remote_r, mut remote_w) = remote_conn.into_split();
+        remote_w.write_all(&bytes).await?;
+        remote_w.flush().await?;
 
-        let r = r.into_inner();
-        let mut client_stream = r.reunite(w)?;
-        tokio::io::copy_bidirectional_with_sizes(&mut client_stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
+        let mut client_r = r.into_inner();
+        // let mut client_stream = r.reunite(client_w)?;
+
+        let t1 = tokio::io::copy(&mut client_r, &mut remote_w);
+        let t2 = tokio::io::copy(&mut remote_r, &mut client_w);
+        tokio::try_join!(t1, t2)?;
+
+        // tokio::io::copy_bidirectional_with_sizes(&mut client_stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
         Ok(())
     }
 }
