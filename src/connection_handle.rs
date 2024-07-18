@@ -72,7 +72,7 @@ where
             async move {
                 let result = handler.handle_conn(stream).await;
                 if let Err(e) = result {
-                    info!("[{}] process connection error: {:?}", handler.name(), e);
+                    error!("[{}] process connection error: {:?}", handler.name(), e);
                 } else {
                     debug!("[{}] process connection success", handler.name());
                 }

@@ -17,10 +17,10 @@ pub struct TcpConnector {
 }
 
 impl TcpConnector {
-    pub fn new(target_connection_config: TargetConnectionConfig) -> Self {
-        let dns_resolver = dns::DnsResolver::new(target_connection_config.dns_cache_ttl);
+    pub fn new(target_connection_config: TargetConnectionConfig) -> anyhow::Result<Self> {
+        let dns_resolver = dns::DnsResolver::new(target_connection_config.dns_cache_ttl)?;
         let dns_resolver = Arc::new(dns_resolver);
-        Self { target_connection_config, dns_resolver }
+        Ok(Self { target_connection_config, dns_resolver })
     }
     async fn to_socket_addr(&self, host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
         if let Ok(addr) = host.parse::<Ipv4Addr>() {
@@ -67,11 +67,13 @@ mod tests {
     #[tokio::test]
     async fn test_to_socket_addr() -> anyhow::Result<()> {
         env_logger::init();
-        let dns_resolver = TDNSResolver::new(DnsResolver::new(None));
+        let dns_resolver = TDNSResolver::new(DnsResolver::new(None)?);
         let target_connection_config = TargetConnectionConfig::default();
-        let tcp_connector = TcpConnector::new(target_connection_config);
+        let tcp_connector = TcpConnector::new(target_connection_config)?;
         debug!("{:?}", "start");
         let addrs = tcp_connector.to_socket_addr("www.baidu.com", 80).await?;
+        // debug!("{:?}", addrs);
+        let addrs = tcp_connector.to_socket_addr("apm.gz.cvte.cn", 80).await?;
         debug!("{:?}", addrs);
         let addrs = tcp_connector.to_socket_addr("192.168.31.8", 8080).await?;
         debug!("{:?}", addrs);
