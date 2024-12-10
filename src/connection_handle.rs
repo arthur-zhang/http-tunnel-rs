@@ -134,7 +134,13 @@ impl TunnelHandler for HttpsTunnel {
         if sni.is_empty() {
             return Err(anyhow::anyhow!("no sni"));
         }
-        let mut remote_conn = self.tcp_connector.connect(&sni, 443).await?;
+        let mut remote_conn = match self.tcp_connector.connect(&sni, 443).await {
+            Ok(conn) => {conn}
+            Err(err) => {
+                error!("failed to connect to https remote {}, err: {:?}", sni, err);
+                bail!(err)
+            }
+        };
 
         remote_conn.write_all(&bytes).await?;
         remote_conn.flush().await?;
@@ -168,7 +174,12 @@ impl TunnelHandler for TcpTunnel {
             None => bail!("invalid remote addr: {}", remote_addr),
         };
 
-        let mut remote_conn = self.tcp_connector.connect(&host, port).await?;
+        let mut remote_conn = match self.tcp_connector.connect(&host, port).await {
+            Ok(conn) => {conn}
+            Err(err) => {
+                bail!("failed to connect to remote {}, err: {:?}", remote_addr, err)
+            }
+        };
         tokio::io::copy_bidirectional_with_sizes(&mut stream, &mut remote_conn, BUF_SIZE, BUF_SIZE).await?;
         Ok(())
     }

@@ -1,7 +1,7 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4};
 use std::sync::Arc;
-
-use log::error;
+use anyhow::bail;
+use log::{error, info};
 use rand::prelude::SliceRandom;
 use rand::thread_rng;
 
@@ -32,7 +32,17 @@ impl TcpConnector {
     }
 
     pub async fn connect(&self, host: &str, port: u16) -> anyhow::Result<tokio::net::TcpStream> {
-        let mut sock_addrs = self.to_socket_addr(host, port).await?;
+        let mut sock_addrs = match self.to_socket_addr(host, port).await {
+            Ok(addrs) => {
+                addrs
+            }
+            Err(err) => {
+                bail!("failed to resolve host: {}, err: {:?}", host, err);
+            }
+        };
+
+        info!("resolve done, host: {}, port: {}, sock_addrs: {:?}", host, port, sock_addrs);
+
         let sock_addr = sock_addrs.choose(&mut thread_rng()).ok_or(anyhow::anyhow!("No address found for host: {}", host))?;
         let connect_result = tokio::time::timeout(
             self.target_connection_config.connect_timeout,
